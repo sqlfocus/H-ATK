@@ -1,5 +1,10 @@
 *~
 build/
+GPATH
+GRTAGS
+GSYMS
+GTAGS
+
 # Object files
 *.o
 *.ko
