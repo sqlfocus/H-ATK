@@ -38,7 +38,9 @@ static void worker_process(int pid)
     char GET_msg[MSG_MAX_LEN] = {0};     /* 待发送的GET报文 */
     int GET_msg_len = 0;
     struct sockaddr_in server_ip;        /* IP地址 */
+    struct sockaddr_in client_ip;
 
+    /* 构建服务器端IP */
     server_ip.sin_family = AF_INET;
     server_ip.sin_port = htons(80);
     if(inet_pton(AF_INET, g_opt.dip, &server_ip.sin_addr) <= 0) {
@@ -46,29 +48,63 @@ static void worker_process(int pid)
         return;
     }
 
-    
+    /* 构建发送的字符串 */
     snprintf(GET_msg, MSG_MAX_LEN, "%s%s%s\r\n\r\n",
              "GET / HTTP/1.1\r\n",
              "Host: ",
              g_opt.dip);
     GET_msg_len = strlen(GET_msg);
 
-
+    /* 构建连接信息结构 */
     int conn_num = (g_opt.client + g_opt.child)/g_opt.child;
     CONN_INFO *conn = malloc(sizeof(CONN_INFO) * conn_num);
     if (NULL == conn) {
         LOG_ERR_EXIT(strerror(errno));
     }
     memset(conn, 0, sizeof(CONN_INFO) * conn_num);
+
+    /* 检查源IP绑定 */
+    uint32_t sip_min = 0;
+    uint32_t sip_max = 0;
+    if (g_opt.bind_sip
+        && 0 != strcmp(g_opt.sip_min, "")
+        && 0 != strcmp(g_opt.sip_max, "")) {
+        if(inet_pton(AF_INET, g_opt.sip_min, &client_ip.sin_addr) <= 0) {
+            LOG_ERR(strerror(errno));
+            LOG_INFO("%s", "DISABLE srcIP bind!!!");
+                    
+            g_opt.bind_sip = 0;    /* TAKECARE: 仅修改本子进程的内存 */
+        } else {
+            sip_min = ntohl(client_ip.sin_addr.s_addr);
+        }
+
+        if(inet_pton(AF_INET, g_opt.sip_max, &client_ip.sin_addr) <= 0) {
+            LOG_ERR(strerror(errno));
+            LOG_INFO("%s", "DISABLE srcIP bind!!!");
+                    
+            g_opt.bind_sip = 0;    /* TAKECARE: 仅修改本子进程的内存 */
+        } else {
+            sip_max = ntohl(client_ip.sin_addr.s_addr);
+        }
+    } else {
+        LOG_INFO("%s", "srcIP bind OFF");
+        g_opt.bind_sip = 0;
+    }
+    LOG_INFO("after CHANGE, sip_min=%d.%d.%d.%d, sip_max=%d.%d.%d.%d\n",
+             (sip_min>>24)&0xff, (sip_min>>16)&0xff,
+             (sip_min>>8)&0xff, (sip_min)&0xff,
+             (sip_max>>24)&0xff, (sip_max>>16)&0xff,
+             (sip_max>>8)&0xff, (sip_max)&0xff);
     
     /* 主循环 */
     int conn_id = 0;           /* 连接结构索引 */
+    int sip_id = sip_min;      /* 源IP索引 */
     for (;;) {
         /* 索引回滚，重新遍历连接结构 */
-        if (conn_id >= conn_num) {
+        CONN_INFO *tmp_conn = &conn[conn_id];
+        if (++conn_id >= conn_num) {
             conn_id = 0;
         }
-        CONN_INFO *tmp_conn = &conn[conn_id];
 
         /* 起始状态，创建插口 */
         if (STAT_INIT == tmp_conn->state) {
@@ -85,20 +121,13 @@ static void worker_process(int pid)
             }
             tmp_conn->fd = fd;
         
-            /* 绑定源IP，目前仅绑定到第一个源IP
-               TODO: 实现更多策略的绑定 */
-            if (g_opt.bind_sip && g_opt.sip_min
-                && 0 != strcmp(g_opt.sip_min, "")) {
-                struct sockaddr_in client_ip;
-
+            /* 绑定源IP */
+            if (g_opt.bind_sip) {
                 client_ip.sin_family = AF_INET;
                 client_ip.sin_port = 0;
-                if(inet_pton(AF_INET, g_opt.sip_min, &client_ip.sin_addr) <= 0) {
-                    LOG_ERR(strerror(errno));
-                    LOG_INFO("%s", "DISABLE srcIP bind!!!");
-                    
-                    g_opt.bind_sip = 0;    /* TAKECARE: 仅修改本子进程的内存 */
-                    continue;
+                client_ip.sin_addr.s_addr = htonl(sip_id);
+                if (++sip_id > sip_max) {
+                    sip_id = sip_min;
                 }
 
                 if(-1 == bind(fd, (struct sockaddr *)&client_ip, sizeof(client_ip))) {
@@ -157,7 +186,7 @@ static void worker_process(int pid)
                 
                 tmp_conn->rlen += len;
                 if (len <= MSG_MAX_LEN) {
-                    LOG_INFO("\n%s\n", RECV_msg);
+                    //LOG_INFO("\n%s\n", RECV_msg);
                     
                     /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作
                        接收完毕；后续需要调整，通过解包，明确判断结束点 */
