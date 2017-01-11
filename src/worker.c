@@ -6,6 +6,24 @@
 #include "global.h"
 #include "worker.h"
 
+/* 存储连接结构
+   TODO: 目前不关注发送信息的差异性，并且接收信息也不处理；
+   因此，暂时利用全局结构代替此处的信息结构
+*/
+typedef struct st_conn_info_t {
+#define STAT_INIT  0
+#define STAT_WRITE 1
+#define STAT_READ  2
+    int state;                 /* 连接状态，INIT/WRITE/READ */
+    int fd;                    /* 插口描述符 */
+
+    //char RECV_msg[MSG_MAX_LEN];
+    int rlen;                  /* 读取长度 */
+
+    //char GET_msg[MSG_MAX_LEN];
+    int wlen;                  /* 发送长度 */
+}CONN_INFO;
+
 
 /* 工作进程入口
    @param: int, 工作进程PID号
@@ -35,18 +53,37 @@ static void worker_process(int pid)
              g_opt.dip);
     GET_msg_len = strlen(GET_msg);
 
-    
+
+    int conn_num = (g_opt.client + g_opt.child)/g_opt.child;
+    CONN_INFO *conn = malloc(sizeof(CONN_INFO) * conn_num);
+    if (NULL == conn) {
+        LOG_ERR_EXIT(strerror(errno));
+    }
+    memset(conn, 0, sizeof(CONN_INFO) * conn_num);
     
     /* 主循环 */
-    int fd = -1;
-    int wlen, rlen;
+    int conn_id = 0;           /* 连接结构索引 */
     for (;;) {
-        if (-1 == fd) {
-            fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+        /* 索引回滚，重新遍历连接结构 */
+        if (conn_id >= conn_num) {
+            conn_id = 0;
+        }
+        CONN_INFO *tmp_conn = &conn[conn_id];
+
+        /* 起始状态，创建插口 */
+        if (STAT_INIT == tmp_conn->state) {
+            /* 关闭各种错误导致的无用插口 */
+            if (tmp_conn->fd) {
+                close(tmp_conn->fd);
+                tmp_conn->fd = 0;
+            }
+            
+            int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
             if (-1 == fd) {
                 LOG_ERR(strerror(errno));
                 continue;
             }
+            tmp_conn->fd = fd;
         
             /* 绑定源IP，目前仅绑定到第一个源IP
                TODO: 实现更多策略的绑定 */
@@ -59,13 +96,14 @@ static void worker_process(int pid)
                 if(inet_pton(AF_INET, g_opt.sip_min, &client_ip.sin_addr) <= 0) {
                     LOG_ERR(strerror(errno));
                     LOG_INFO("%s", "DISABLE srcIP bind!!!");
+                    
                     g_opt.bind_sip = 0;    /* TAKECARE: 仅修改本子进程的内存 */
-                    goto reconn;
+                    continue;
                 }
 
                 if(-1 == bind(fd, (struct sockaddr *)&client_ip, sizeof(client_ip))) {
                     LOG_ERR(strerror(errno));
-                    goto reconn;
+                    //continue;            /* 失败后，由内核选择SIP */
                 }
             }
         
@@ -73,54 +111,74 @@ static void worker_process(int pid)
                               sizeof(struct sockaddr_in))) {
                 if (errno != EINPROGRESS) {
                     LOG_ERR(strerror(errno));
-                    goto reconn;
+                    continue;
                 }
             }
+
+            tmp_conn->state = STAT_WRITE;
         }
 
-        wlen = 0;
-        do {
-            int len = write(fd, GET_msg, GET_msg_len);
-            if (-1 == len) {
-                if (EAGAIN == errno) {
-                    continue;
-                } else {
-                    LOG_ERR(strerror(errno));
-                    goto reconn;
+        if (STAT_WRITE == tmp_conn->state) {
+            int tmp_loop = 0;
+            do {
+                int len = write(tmp_conn->fd,
+                                GET_msg + tmp_conn->wlen,
+                                GET_msg_len - tmp_conn->wlen);
+                if (-1 == len) {
+                    if (EAGAIN == errno) {
+                        continue;
+                    } else {
+                        LOG_ERR(strerror(errno));
+                        goto reconn;
+                    }
                 }
-            } else {
-                wlen += len;
-                if (wlen == GET_msg_len) {
+
+                tmp_conn->wlen += len;
+                if (tmp_conn->wlen == GET_msg_len) {
+                    tmp_conn->wlen = 0;
+                    tmp_conn->state = STAT_READ;
                     break;
                 }
-            }
-        } while(1);
+            } while(tmp_loop++ < RW_LOOP_MAX);
+        }
 
-        rlen = 0;
-        do {
-            int len = read(fd, RECV_msg, MSG_MAX_LEN);
-            if (-1 == len) {
-                if (EAGAIN == errno) {
-                    continue;
-                } else {
-                    LOG_ERR(strerror(errno));
-                    goto reconn;
+        if (STAT_READ == tmp_conn->state) {
+            int tmp_loop = 0;
+            do {
+                int len = read(tmp_conn->fd, RECV_msg, MSG_MAX_LEN);
+                if (-1 == len) {
+                    if (EAGAIN == errno) {
+                        continue;
+                    } else {
+                        LOG_ERR(strerror(errno));
+                        goto reconn;
+                    }
                 }
-            } else {
-                rlen += len;
+                
+                tmp_conn->rlen += len;
                 if (len <= MSG_MAX_LEN) {
                     LOG_INFO("\n%s\n", RECV_msg);
+                    
+                    /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作
+                       接收完毕；后续需要调整，通过解包，明确判断结束点 */
+                    if (g_opt.keepalive) {
+                        tmp_conn->state = STAT_WRITE;
+                    } else {
+                    reconn:
+                        close(tmp_conn->fd);
+                        tmp_conn->fd = 0;
+                        tmp_conn->state = STAT_INIT;
+                    }
+                    tmp_conn->rlen = 0;
+
                     break;
                 }
-            }
-        } while(1);
-
-        if (0 == g_opt.keepalive) {
-        reconn:
-            close(fd);
-            fd = -1;
+            } while(tmp_loop++ < RW_LOOP_MAX);
         }
     }
+
+    /* 清理资源 */
+    free(conn);
 }
 
 

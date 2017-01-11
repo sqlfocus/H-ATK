@@ -9,6 +9,7 @@
 #include "option.h"
 
 #define MSG_MAX_LEN  8192         /* 收发报文缓存的最大长度 */
+#define RW_LOOP_MAX 3             /* 非阻塞模式下，最大的读写重试次数 */
 
 #define LOG_INFO(fmt, ...) do {                                         \
         printf("[%s|%d] "fmt"\n", __FILE__, __LINE__, ##__VA_ARGS__);   \
