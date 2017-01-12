@@ -3,6 +3,7 @@
 #include <sys/types.h>          /* for socket/bind/connect() */
 #include <sys/socket.h>
 #include <arpa/inet.h>          /* for htons()/inet_pton() */
+#include <signal.h>             /* for signal() */
 #include "global.h"
 #include "worker.h"
 #include "statistics.h"
@@ -41,6 +42,11 @@ static void worker_process(int id)
     struct sockaddr_in server_ip;        /* IP地址 */
     struct sockaddr_in client_ip;
 
+    /* 当对端read插口关闭时，write()会触发SIGPIPE信号； 如果屏蔽掉，
+       则会返回错误EPIPE，被错误判断捕捉；如果不屏蔽，则默认导致子
+       进程退出 */
+    signal(SIGPIPE, SIG_IGN);
+    
     /* 构建服务器端IP */
     server_ip.sin_family = AF_INET;
     server_ip.sin_port = htons(80);
