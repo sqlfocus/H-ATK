@@ -5,6 +5,7 @@
 #include <arpa/inet.h>          /* for htons()/inet_pton() */
 #include "global.h"
 #include "worker.h"
+#include "statistics.h"
 
 /* 存储连接结构
    TODO: 目前不关注发送信息的差异性，并且接收信息也不处理；
@@ -26,13 +27,13 @@ typedef struct st_conn_info_t {
 
 
 /* 工作进程入口
-   @param: int, 工作进程PID号
+   @param: int, 工作进程的启动索引号，用于检索共享内存
    @ret: void
    
    @TAKECARE:
    1)此函数不应该返回
 */
-static void worker_process(int pid)
+static void worker_process(int id)
 {
     char RECV_msg[MSG_MAX_LEN] = {0};
     char GET_msg[MSG_MAX_LEN] = {0};     /* 待发送的GET报文 */
@@ -116,7 +117,7 @@ static void worker_process(int pid)
             
             int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
             if (-1 == fd) {
-                LOG_ERR(strerror(errno));
+                get_stat_info(id)->other_ERR[errno]++;
                 continue;
             }
             tmp_conn->fd = fd;
@@ -131,15 +132,16 @@ static void worker_process(int pid)
                 }
 
                 if(-1 == bind(fd, (struct sockaddr *)&client_ip, sizeof(client_ip))) {
-                    LOG_ERR(strerror(errno));
+                    get_stat_info(id)->other_ERR[errno]++;
                     //continue;            /* 失败后，由内核选择SIP */
                 }
             }
-        
+
+            get_stat_info(id)->conn_try++;
             if (-1 == connect(fd, (const struct sockaddr *)&server_ip,
                               sizeof(struct sockaddr_in))) {
                 if (errno != EINPROGRESS) {
-                    LOG_ERR(strerror(errno));
+                    get_stat_info(id)->conn_ERR[errno]++;
                     continue;
                 }
             }
@@ -150,20 +152,24 @@ static void worker_process(int pid)
         if (STAT_WRITE == tmp_conn->state) {
             int tmp_loop = 0;
             do {
+                get_stat_info(id)->write_try++;
                 int len = write(tmp_conn->fd,
                                 GET_msg + tmp_conn->wlen,
                                 GET_msg_len - tmp_conn->wlen);
                 if (-1 == len) {
+                    get_stat_info(id)->write_ERR[errno]++;
+                    
                     if (EAGAIN == errno) {
                         continue;
                     } else {
-                        LOG_ERR(strerror(errno));
                         goto reconn;
                     }
                 }
 
                 tmp_conn->wlen += len;
                 if (tmp_conn->wlen == GET_msg_len) {
+                    get_stat_info(id)->get_send++;
+                    
                     tmp_conn->wlen = 0;
                     tmp_conn->state = STAT_READ;
                     break;
@@ -174,19 +180,21 @@ static void worker_process(int pid)
         if (STAT_READ == tmp_conn->state) {
             int tmp_loop = 0;
             do {
+                get_stat_info(id)->read_try++;
                 int len = read(tmp_conn->fd, RECV_msg, MSG_MAX_LEN);
                 if (-1 == len) {
+                    get_stat_info(id)->read_ERR[errno]++;
+                    
                     if (EAGAIN == errno) {
                         continue;
                     } else {
-                        LOG_ERR(strerror(errno));
                         goto reconn;
                     }
                 }
                 
                 tmp_conn->rlen += len;
                 if (len <= MSG_MAX_LEN) {
-                    //LOG_INFO("\n%s\n", RECV_msg);
+                    get_stat_info(id)->get_response++;
                     
                     /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作
                        接收完毕；后续需要调整，通过解包，明确判断结束点 */
@@ -194,6 +202,8 @@ static void worker_process(int pid)
                         tmp_conn->state = STAT_WRITE;
                     } else {
                     reconn:
+                        get_stat_info(id)->conn_reconn++;
+                        
                         close(tmp_conn->fd);
                         tmp_conn->fd = 0;
                         tmp_conn->state = STAT_INIT;
@@ -215,7 +225,8 @@ static void worker_process(int pid)
 void spawn_child_process(int worker_num, int cpu_num)
 {
     pid_t pid;
-    for (int i=0; i<worker_num; i++){
+    int i;
+    for (i=0; i<worker_num; i++){
         pid = fork();
         switch (pid) {
         case -1:
@@ -247,8 +258,8 @@ void spawn_child_process(int worker_num, int cpu_num)
     }
     LOG_INFO("child[%d] bind to CPU[%d]", pid, pid % cpu_num);
 
-    /* 工作线程主处理入口 */
-    worker_process(pid);
+    /* 工作线程主处理入口; 索引ID 0预留给主进程 */
+    worker_process(i+1);
     LOG_ERR_EXIT("SHOULD NOT HERE!!!");
 }
 

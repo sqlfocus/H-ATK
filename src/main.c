@@ -28,13 +28,21 @@ int main(int argc, char **argv)
     if (-1 == get_sysinfo()) {
         LOG_ERR_EXIT("get sysinfo failed");
     }
+
+    /* 创建共享内存以存储统计信息 */
+    if (-1 == create_shared_mm()) {
+        LOG_ERR_EXIT("shared memory created failed");
+    }
     
     /* 创建子进程 */
     spawn_child_process(g_opt.child, g_sysinfo.cpu_num);
     
     /* 主处理循环 */
     for(;;) {
-        sleep(1);
+        sleep(g_opt.stat_dur);
+        switch_hot_cold();
+        merge_to_master();
+        print_stat_res();
     }
     
     return 0;

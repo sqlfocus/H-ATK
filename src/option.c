@@ -5,7 +5,7 @@
 #include "option.h"
 
 OPTION_T g_opt = {
-    .client = 1000,
+    .client = 1,
     .child = 1,
     .keepalive = 0,
     .bind_sip = 0,
