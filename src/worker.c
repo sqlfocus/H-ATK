@@ -60,7 +60,7 @@ static void worker_process(int id)
     snprintf(GET_msg, MSG_MAX_LEN, "%s%s%s\r\n\r\n",
              "GET / HTTP/1.1\r\n",
              "Host: ",
-             g_opt.dip);
+             g_opt.domain);
     GET_msg_len = strlen(GET_msg);
 
     /* 构建连接信息结构 */
@@ -155,8 +155,10 @@ static void worker_process(int id)
             
             /* 设置非阻塞模式 */
             int flags = 1;
-            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
-
+            if (-1 == setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags))) {
+                get_stat_info(id)->conn_ERR[errno]++;
+                /* do nothing */;
+            }
 
             tmp_conn->state = STAT_WRITE;
         }
@@ -171,7 +173,9 @@ static void worker_process(int id)
                 if (-1 == len) {
                     get_stat_info(id)->write_ERR[errno]++;
                     
-                    if (EAGAIN == errno) {
+                    if (EAGAIN == errno
+                        || EINTR == errno
+                        || EWOULDBLOCK == errno) {
                         continue;
                     } else {
                         goto reconn;
@@ -197,15 +201,18 @@ static void worker_process(int id)
                 if (-1 == len) {
                     get_stat_info(id)->read_ERR[errno]++;
                     
-                    if (EAGAIN == errno) {
+                    if (EAGAIN == errno
+                        || EINTR == errno
+                        || EWOULDBLOCK == errno) {
                         continue;
                     } else {
                         goto reconn;
                     }
                 }
-                
-                tmp_conn->rlen += len;
-                if (len <= MSG_MAX_LEN) {
+
+                /* 未考虑=0的情况, 当报文长度=MSG_MAX_LEN时，可以借助以下
+                    ioctl(fd, FIONREAD, &num) 判断是否需要继续读取报文 */
+                if (0< len && len < MSG_MAX_LEN) {
                     get_stat_info(id)->get_response++;
                     
                     /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作

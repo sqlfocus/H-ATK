@@ -12,6 +12,7 @@ OPTION_T g_opt = {
     .duration = 30,
     .stat_dur = 3,
     .dip = "127.0.0.1",
+    .domain = "localhost",
     .sip_min = "",
     .sip_max = "",
 };
@@ -32,6 +33,7 @@ int parse_option(int argc, char** argv)
            "duration=%d, "
            "stat_dur=%d, \n"
            "dip=%s, "
+           "domain=%s, "
            "sip_min=%s, "
            "sip_max=%s, "
            "\n\n",
@@ -42,6 +44,7 @@ int parse_option(int argc, char** argv)
            g_opt.duration,
            g_opt.stat_dur,
            g_opt.dip,
+           g_opt.domain,
            g_opt.sip_min,
            g_opt.sip_max);
     return 0;

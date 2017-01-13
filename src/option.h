@@ -10,6 +10,7 @@ typedef struct st_option_t {
     int duration;         /* 运行时长 */
     int stat_dur;         /* 统计输出周期 */
     char dip[32];         /* 目的IP */
+    char domain[256];     /* 域名 */
     char sip_min[32];     /* 源IP */
     char sip_max[32];
 }OPTION_T;
