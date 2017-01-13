@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>          /* for htons()/inet_pton() */
 #include <signal.h>             /* for signal() */
+#include <linux/tcp.h>          /* for TCP_NODELAY */
 #include "global.h"
 #include "worker.h"
 #include "statistics.h"
@@ -151,6 +152,11 @@ static void worker_process(int id)
                     continue;
                 }
             }
+            
+            /* 设置非阻塞模式 */
+            int flags = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
+
 
             tmp_conn->state = STAT_WRITE;
         }
