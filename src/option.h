@@ -6,6 +6,7 @@ typedef struct st_option_t {
     int client;           /* 并发度，客户数 */
     int child;            /* 进/线程数，不能大于核心数 */
     int keepalive;        /* 是否支持keepalive模式, 0/1 */
+    int is_concurrent;    /* 是否测试并发，0/1 */
     int bind_sip;         /* 是否可选择源IP */
     int duration;         /* 运行时长 */
     int stat_dur;         /* 统计输出周期 */

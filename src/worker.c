@@ -5,6 +5,7 @@
 #include <arpa/inet.h>          /* for htons()/inet_pton() */
 #include <signal.h>             /* for signal() */
 #include <linux/tcp.h>          /* for TCP_NODELAY */
+#include <time.h>               /* for nanosleep() */
 #include "global.h"
 #include "worker.h"
 #include "statistics.h"
@@ -105,9 +106,26 @@ static void worker_process(int id)
              (sip_max>>8)&0xff, (sip_max)&0xff);
     
     /* 主循环 */
-    int conn_id = 0;           /* 连接结构索引 */
-    int sip_id = sip_min;      /* 源IP索引 */
+    int conn_id = 0;                 /* 连接结构索引 */
+    int sip_id = sip_min;            /* 源IP索引 */
+    struct timespec sleep_interval;  /* 睡眠间隔 */
+    
+    /* 并发环境下，需要睡眠，以降低发包频率 */
+    sleep_interval.tv_sec = 0;
+    if (1 == g_opt.is_concurrent) {
+        sleep_interval.tv_nsec = 1000000000/g_opt.client;
+        if (sleep_interval.tv_nsec > 999999999) {
+            sleep_interval.tv_nsec = 999999999;
+        }
+    } else {
+        sleep_interval.tv_nsec = 100;
+    }
+    LOG_INFO("%s [%ld]ns", "sleep interval", sleep_interval.tv_nsec);
+
+    
     for (;;) {
+        nanosleep(&sleep_interval, NULL);
+        
         /* 索引回滚，重新遍历连接结构 */
         CONN_INFO *tmp_conn = &conn[conn_id];
         if (++conn_id >= conn_num) {
@@ -138,6 +156,12 @@ static void worker_process(int id)
                     sip_id = sip_min;
                 }
 
+                int on=1;
+                if((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0 ) {
+                    get_stat_info(id)->other_ERR[errno]++;
+                    continue;
+                }
+
                 if(-1 == bind(fd, (struct sockaddr *)&client_ip, sizeof(client_ip))) {
                     get_stat_info(id)->other_ERR[errno]++;
                     //continue;            /* 失败后，由内核选择SIP */
@@ -156,7 +180,7 @@ static void worker_process(int id)
             /* 设置非阻塞模式 */
             int flags = 1;
             if (-1 == setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags))) {
-                get_stat_info(id)->conn_ERR[errno]++;
+                get_stat_info(id)->other_ERR[errno]++;
                 /* do nothing */;
             }
 
@@ -211,7 +235,7 @@ static void worker_process(int id)
                 }
 
                 /* 未考虑=0的情况, 当报文长度=MSG_MAX_LEN时，可以借助以下
-                    ioctl(fd, FIONREAD, &num) 判断是否需要继续读取报文 */
+                   ioctl(fd, FIONREAD, &num) 判断是否需要继续读取报文 */
                 if (0< len && len < MSG_MAX_LEN) {
                     get_stat_info(id)->get_response++;
                     

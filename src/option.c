@@ -5,9 +5,10 @@
 #include "option.h"
 
 OPTION_T g_opt = {
-    .client = 1,
+    .client = 70000,
     .child = 1,
-    .keepalive = 0,
+    .keepalive = 1,
+    .is_concurrent = 1,
     .bind_sip = 0,
     .duration = 30,
     .stat_dur = 3,
@@ -25,6 +26,22 @@ SYS_INFO g_sysinfo = {
 
 int parse_option(int argc, char** argv)
 {
+    /* 验证参数合理性 */
+    if (g_opt.client > 10000000) {           /* 1kw, 保持死循环最小100ns的间隔 */
+        LOG_ERR("too many clients!!!");
+        return -1;
+    }
+    if (1 == g_opt.is_concurrent
+        && 0 == g_opt.keepalive) {
+        LOG_ERR("cocurrent MUST be in KEEPALVE!!!");
+        return -1;
+    }
+    if ( (0==strcmp(g_opt.sip_min, "") && 1==g_opt.bind_sip)
+        || (0 != strcmp(g_opt.sip_min, "") && 0==g_opt.bind_sip) ) {
+        LOG_ERR("bind SRC option conflict!!!");
+        return -1;
+    }
+    
     /* 打印系统信息 */
     printf("client=%d, "
            "child=%d, \n"
