@@ -24,11 +24,12 @@ H-ATK -*- mode: org; -*-
 * 编译运行
   #+BEGIN_EXAMPLE
   $ cd ${H-ATK}
+  $ git submodule update --init --recursive
   $ mkdir build
   $ cd build
   $ cmake ..
   $ make
-  $ ./bin/H-ATK
+  $ ./bin/H-ATK ../conf/default.conf
   #+END_EXAMPLE
 
 
