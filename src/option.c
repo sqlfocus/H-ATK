@@ -3,12 +3,15 @@
 #include <sys/resource.h>
 #include "global.h"
 #include "option.h"
+#include "cJSON.h"
 
+
+/* 定义全局变量 */
 OPTION_T g_opt = {
-    .client = 70000,
+    .client = 1,
     .child = 1,
-    .keepalive = 1,
-    .is_concurrent = 1,
+    .keepalive = 0,
+    .is_concurrent = 0,
     .bind_sip = 0,
     .duration = 30,
     .stat_dur = 3,
@@ -24,8 +27,88 @@ SYS_INFO g_sysinfo = {
 };
 
 
+static int parse_conf(const char *conf)
+{
+    cJSON *cj_res;
+    cJSON *obj;
+
+    cj_res = cJSON_Parse(conf);
+    if (NULL == cj_res) {
+        LOG_ERR("conf parse failed!!!");
+        return -1;
+    }
+
+#define SET_VAL_INT(name, off) do {                         \
+        obj = cJSON_GetObjectItem(cj_res, name);            \
+        if (NULL == obj) {                                  \
+            break;                                          \
+        }                                                   \
+        if (cJSON_Number == obj->type) {                    \
+            g_opt.off = obj->valueint;                      \
+        } else {                                            \
+            LOG_ERR("MAYBE some conf param type error!!!"); \
+        }                                                   \
+    }while(0);
+    
+#define SET_VAL_STR(name, off) do {                                     \
+        obj = cJSON_GetObjectItem(cj_res, name);                        \
+        if (NULL == obj) {                                              \
+            break;                                                      \
+        }                                                               \
+        if (cJSON_String == obj->type) {                                \
+            snprintf(g_opt.off, sizeof(g_opt.off), "%s", obj->valuestring); \
+        } else {                                                        \
+            LOG_ERR("MAYBE some conf param type error!!!");             \
+        }                                                               \
+    }while(0);
+
+    SET_VAL_INT("client", client);
+    SET_VAL_INT("child", child);
+    SET_VAL_INT("keepalive", keepalive);
+    SET_VAL_INT("is_concurrent", is_concurrent);
+    SET_VAL_INT("bind_sip", bind_sip);
+    SET_VAL_INT("duration", duration);
+    SET_VAL_INT("stat_dur", stat_dur);
+    SET_VAL_STR("dip", dip);
+    SET_VAL_STR("domain", domain);
+    SET_VAL_STR("sip_min", sip_min);
+    SET_VAL_STR("sip_max", sip_max);
+
+    cJSON_Delete(cj_res);
+    return 0;
+}
+
 int parse_option(int argc, char** argv)
 {
+    char *conf_file = NULL;
+    int fd;
+    char conf[MSG_MAX_LEN] = {0};
+    
+    /* 解析配置文件 */
+    if (argc > 1) {
+        conf_file = argv[1];
+    }
+    if (NULL != conf_file) {
+        fd = open(conf_file, O_RDONLY);
+    } else {
+        LOG_ERR("NO conf file!!!");
+        return -1;
+    }
+    if (-1 == fd) {
+        LOG_ERR("open conf file failed!!!");
+        LOG_ERR(strerror(errno));
+        return -1;
+    }
+    if (-1 == read(fd, conf, MSG_MAX_LEN)) {
+        LOG_ERR(strerror(errno));
+        return -1;
+    } else {
+        if (0 != parse_conf(conf)) {
+            return -1;
+        }
+    }
+    close(fd);
+
     /* 验证参数合理性 */
     if (g_opt.client > 10000000) {           /* 1kw, 保持死循环最小100ns的间隔 */
         LOG_ERR("too many clients!!!");
@@ -37,7 +120,7 @@ int parse_option(int argc, char** argv)
         return -1;
     }
     if ( (0==strcmp(g_opt.sip_min, "") && 1==g_opt.bind_sip)
-        || (0 != strcmp(g_opt.sip_min, "") && 0==g_opt.bind_sip) ) {
+         || (0 != strcmp(g_opt.sip_min, "") && 0==g_opt.bind_sip) ) {
         LOG_ERR("bind SRC option conflict!!!");
         return -1;
     }

@@ -23,6 +23,39 @@ set(CMAKE_C_FLAGS_RELEASE "$ENV{CFLAGS} -O3")
 SET(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
 SET(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
 
+#创建定制目标, 编译依赖对象
+set(DEPS_INCLUDE "${CMAKE_BINARY_DIR}/deps/include")
+set(DEPS_LIB "${CMAKE_BINARY_DIR}/deps/lib")
+set(DEPS_BIN "${CMAKE_BINARY_DIR}/bin")
+file(MAKE_DIRECTORY ${DEPS_LIB})
+file(MAKE_DIRECTORY ${DEPS_INCLUDE})
+file(MAKE_DIRECTORY ${DEPS_BIN})
+link_directories(${DEPS_LIB})
+include_directories(${DEPS_INCLUDE})
+
+set(CJSON_SRC "${CMAKE_SOURCE_DIR}/deps/cJSON")
+set(CJSON_LIB_A "libcjson.a")
+set(CJSON_LIB_A_H "cJSON.h")
+if(NOT EXISTS ${DEPS_LIB}/${CJSON_LIB_A})
+    message(STATUS "building ${CJSON_SRC}")
+
+    execute_process(
+        COMMAND make clean
+        WORKING_DIRECTORY ${CJSON_SRC})
+    execute_process(
+        COMMAND make static
+        WORKING_DIRECTORY ${CJSON_SRC})
+    execute_process(
+        COMMAND cp ${CJSON_LIB_A}  ${DEPS_LIB}
+        WORKING_DIRECTORY ${CJSON_SRC})
+    execute_process(
+        COMMAND cp ${CJSON_LIB_A_H}  ${DEPS_INCLUDE}
+        WORKING_DIRECTORY ${CJSON_SRC})
+    
+    message(STATUS "done")
+endif()
+
+
 #指定编译子目录
 add_subdirectory(src)
 

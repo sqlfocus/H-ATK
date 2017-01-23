@@ -6,6 +6,7 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include "option.h"
 
 #define MSG_MAX_LEN  8192         /* 收发报文缓存的最大长度 */
