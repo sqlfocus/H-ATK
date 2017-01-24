@@ -15,6 +15,7 @@ OPTION_T g_opt = {
     .bind_sip = 0,
     .duration = 30,
     .stat_dur = 3,
+    .dport = 80,
     .dip = "127.0.0.1",
     .domain = "localhost",
     .sip_min = "",
@@ -69,6 +70,7 @@ static int parse_conf(const char *conf)
     SET_VAL_INT("bind_sip", bind_sip);
     SET_VAL_INT("duration", duration);
     SET_VAL_INT("stat_dur", stat_dur);
+    SET_VAL_INT("dport", dport);
     SET_VAL_STR("dip", dip);
     SET_VAL_STR("domain", domain);
     SET_VAL_STR("sip_min", sip_min);
@@ -132,6 +134,7 @@ int parse_option(int argc, char** argv)
            "bind_sip=%d, \n"
            "duration=%d, "
            "stat_dur=%d, \n"
+           "dport=%d, "
            "dip=%s, "
            "domain=%s, "
            "sip_min=%s, "
@@ -143,6 +146,7 @@ int parse_option(int argc, char** argv)
            g_opt.bind_sip,
            g_opt.duration,
            g_opt.stat_dur,
+           g_opt.dport,
            g_opt.dip,
            g_opt.domain,
            g_opt.sip_min,

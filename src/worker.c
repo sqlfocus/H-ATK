@@ -51,7 +51,7 @@ static void worker_process(int id)
     
     /* 构建服务器端IP */
     server_ip.sin_family = AF_INET;
-    server_ip.sin_port = htons(80);
+    server_ip.sin_port = htons(g_opt.dport);
     if(inet_pton(AF_INET, g_opt.dip, &server_ip.sin_addr) <= 0) {
         LOG_ERR(strerror(errno));
         return;
