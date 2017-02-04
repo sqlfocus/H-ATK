@@ -32,5 +32,13 @@ H-ATK -*- mode: org; -*-
   $ ./bin/H-ATK ../conf/default.conf
   #+END_EXAMPLE
 
-
+* 统计错误注解
+ - ECONNRESET (Connection reset by peer)
+    : nginx keepalive状态下经常出现此错误，一般情况下，此为正常现象。
+    :
+    : 因为nginx的参数keepalive_requests、keepalive_timeout等决定了它
+    : 不能长时间保持链路，经过固定的请求个数或固定时间后，nginx主动
+    : 断开链路(发送FIN)；H-ATK的状态跳转决定了，收到FIN报文时(read()
+    : 返回值为0的情形)可能处于发送状态，一旦发送了报文，则服务器端以
+    : RST响应，就会出现此错误。
 
