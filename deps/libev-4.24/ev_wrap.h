@@ -2,17 +2,23 @@
 #ifndef EV_WRAP_H
 #define EV_WRAP_H
 #define acquire_cb ((loop)->acquire_cb)
+/* 活跃的事件数 */
 #define activecnt ((loop)->activecnt)
+/* 待监控的fd数组，及大小；fd即数组索引 */
 #define anfdmax ((loop)->anfdmax)
 #define anfds ((loop)->anfds)
 #define async_pending ((loop)->async_pending)
 #define asynccnt ((loop)->asynccnt)
 #define asyncmax ((loop)->asyncmax)
 #define asyncs ((loop)->asyncs)
+/* 底层事件模块儿标识，如EVBACKEND_EPOLL */
 #define backend ((loop)->backend)
+/* 底层事件模块儿的fd，如epoll_create()返回值 */
 #define backend_fd ((loop)->backend_fd)
 #define backend_mintime ((loop)->backend_mintime)
+/* 对应底层事件的操控，如epoll_modify */
 #define backend_modify ((loop)->backend_modify)
+/* 对应底层事件的查询，如epoll_poll */
 #define backend_poll ((loop)->backend_poll)
 #define checkcnt ((loop)->checkcnt)
 #define checkmax ((loop)->checkmax)
@@ -21,12 +27,15 @@
 #define cleanupmax ((loop)->cleanupmax)
 #define cleanups ((loop)->cleanups)
 #define curpid ((loop)->curpid)
+/* 不适于EPOLL系统处理的fd数组 */    
 #define epoll_epermcnt ((loop)->epoll_epermcnt)
 #define epoll_epermmax ((loop)->epoll_epermmax)
 #define epoll_eperms ((loop)->epoll_eperms)
+/* EPOLL系统的监控事件数组，及容量大小 */
 #define epoll_eventmax ((loop)->epoll_eventmax)
 #define epoll_events ((loop)->epoll_events)
 #define evpipe ((loop)->evpipe)
+/* 待处理的IO事件改动队列 */
 #define fdchangecnt ((loop)->fdchangecnt)
 #define fdchangemax ((loop)->fdchangemax)
 #define fdchanges ((loop)->fdchanges)
@@ -41,6 +50,7 @@
 #define idlecnt ((loop)->idlecnt)
 #define idlemax ((loop)->idlemax)
 #define idles ((loop)->idles)
+/* 处理pendings队列的回调函数，初始化为ev_invoke_pending() */
 #define invoke_cb ((loop)->invoke_cb)
 #define io_blocktime ((loop)->io_blocktime)
 #define iocp ((loop)->iocp)
@@ -50,13 +60,18 @@
 #define kqueue_eventmax ((loop)->kqueue_eventmax)
 #define kqueue_events ((loop)->kqueue_events)
 #define kqueue_fd_pid ((loop)->kqueue_fd_pid)
+/* 事件循环相关的控制变量，如深度 */    
 #define loop_count ((loop)->loop_count)
 #define loop_depth ((loop)->loop_depth)
 #define loop_done ((loop)->loop_done)
+/* monotonic time: 从某个固定的时间点开始的绝对的逝去时间 */
 #define mn_now ((loop)->mn_now)
+/* mn_now的取整时间 */
 #define now_floor ((loop)->now_floor)
 #define origflags ((loop)->origflags)
+/* */
 #define pending_w ((loop)->pending_w)
+/* 等待客户端处理到事件数组，二维，第一维代表优先级 */
 #define pendingcnt ((loop)->pendingcnt)
 #define pendingmax ((loop)->pendingmax)
 #define pendingpri ((loop)->pendingpri)
@@ -82,6 +97,7 @@
 #define rfeedcnt ((loop)->rfeedcnt)
 #define rfeedmax ((loop)->rfeedmax)
 #define rfeeds ((loop)->rfeeds)
+/* ev_rt_now与mn_now的差值 */
 #define rtmn_diff ((loop)->rtmn_diff)
 #define sig_pending ((loop)->sig_pending)
 #define sigfd ((loop)->sigfd)

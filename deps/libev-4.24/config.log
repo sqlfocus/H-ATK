@@ -621,7 +621,7 @@ configure:11514: $? = 0
 configure:11514: result: yes
 configure:11514: checking for kqueue
 configure:11514: /usr/bin/cc -o conftest -g -O3   conftest.c  >&5
-/tmp/ccfNGc8C.o: In function `main':
+/tmp/ccclDykb.o: In function `main':
 /home/sqlfocus/githubDB/H-ATK/deps/libev-4.24/conftest.c:65: undefined reference to `kqueue'
 collect2: error: ld returned 1 exit status
 configure:11514: $? = 1
@@ -697,7 +697,7 @@ configure: failed program was:
 configure:11514: result: no
 configure:11514: checking for port_create
 configure:11514: /usr/bin/cc -o conftest -g -O3   conftest.c  >&5
-/tmp/ccy5ZSFG.o: In function `main':
+/tmp/ccml49Ad.o: In function `main':
 /home/sqlfocus/githubDB/H-ATK/deps/libev-4.24/conftest.c:65: undefined reference to `port_create'
 collect2: error: ld returned 1 exit status
 configure:11514: $? = 1
@@ -800,7 +800,7 @@ configure:11736: /usr/bin/cc -o conftest -g -O3   conftest.c  >&5
 conftest.c:44:6: warning: conflicting types for built-in function 'floor'
  char floor ();
       ^
-/tmp/ccRROmd1.o: In function `main':
+/tmp/ccwPs2xy.o: In function `main':
 /home/sqlfocus/githubDB/H-ATK/deps/libev-4.24/conftest.c:48: undefined reference to `floor'
 collect2: error: ld returned 1 exit status
 configure:11736: $? = 1

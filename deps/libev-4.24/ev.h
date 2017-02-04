@@ -176,7 +176,7 @@ struct ev_loop;
 # define EV_A_ EV_A,                              /* a loop as first of multiple arguments */
 # define EV_DEFAULT_UC  ev_default_loop_uc_ ()    /* the default loop, if initialised, as sole arg */
 # define EV_DEFAULT_UC_ EV_DEFAULT_UC,            /* the default loop as first of multiple arguments */
-# define EV_DEFAULT  ev_default_loop (0)          /* the default loop as sole arg */
+# define EV_DEFAULT  ev_default_loop (0)          /* 默认事件循环，the default loop as sole arg */
 # define EV_DEFAULT_ EV_DEFAULT,                  /* the default loop as first of multiple arguments */
 #else
 # define EV_P void
@@ -280,8 +280,8 @@ enum {
 
 /* shared by all watchers */
 #define EV_WATCHER(type)			\
-  int active;       /* 是否开始工作？private */\
-  int pending;      /* 是否有待处理的事件？private */\
+  int active;       /* 是否处于激活状态？private */\
+  int pending;      /* 待处理的事件在pendings队列的索引，private */\
   EV_DECL_PRIORITY  /* 优先级，private */\
   EV_COMMON         /* 私有数据，rw */\
   EV_CB_DECLARE (type)  /* 回调函数，private */
@@ -312,14 +312,15 @@ typedef struct ev_watcher_time
   EV_WATCHER_TIME (ev_watcher_time)
 } ev_watcher_time;
 
+/* 某个文件描述符的监控事件，<TAKECARE!!!>读、写事件不能同时 */
 /* invoked when fd is either EV_READable or EV_WRITEable */
 /* revent EV_READ, EV_WRITE */
 typedef struct ev_io
 {
   EV_WATCHER_LIST (ev_io)
 
-  int fd;     /* ro */
-  int events; /* ro */
+  int fd;     /* 待监控的文件句柄，ro */
+  int events; /* 待监控的事件，ro */
 } ev_io;
 
 /* invoked after a specific time, repeatable (based on monotonic clock) */
@@ -513,7 +514,7 @@ enum {
   EVFLAG_NOSIGMASK = 0x00400000U  /* avoid modifying the signal mask */
 };
 
-/* method bits to be ored together */
+/* 底层事件模块儿的标识，method bits to be ored together */
 enum {
   EVBACKEND_SELECT  = 0x00000001U, /* available just about anywhere */
   EVBACKEND_POLL    = 0x00000002U, /* !win, !aix, broken on osx */
@@ -684,6 +685,7 @@ EV_API_DECL void ev_resume  (EV_P) EV_THROW;
 
 /* these may evaluate ev multiple times, and the other arguments at most once */
 /* either use ev_init + ev_TYPE_set, or the ev_TYPE_init macro, below, to first initialise a watcher */
+/* 事件结构初始化 */
 #define ev_init(ev,cb_) do {			\
   ((ev_watcher *)(void *)(ev))->active  =	\
   ((ev_watcher *)(void *)(ev))->pending = 0;	\
@@ -691,6 +693,7 @@ EV_API_DECL void ev_resume  (EV_P) EV_THROW;
   ev_set_cb ((ev), cb_);			\
 } while (0)
 
+/* 事件设置宏 */
 #define ev_io_set(ev,fd_,events_)            do { (ev)->fd = (fd_); (ev)->events = (events_) | EV__IOFDSET; } while (0)
 #define ev_timer_set(ev,after_,repeat_)      do { ((ev_watcher_time *)(ev))->at = (after_); (ev)->repeat = (repeat_); } while (0)
 #define ev_periodic_set(ev,ofs_,ival_,rcb_)  do { (ev)->offset = (ofs_); (ev)->interval = (ival_); (ev)->reschedule_cb = (rcb_); } while (0)
@@ -705,6 +708,7 @@ EV_API_DECL void ev_resume  (EV_P) EV_THROW;
 #define ev_cleanup_set(ev)                   /* nop, yes, this is a serious in-joke */
 #define ev_async_set(ev)                     /* nop, yes, this is a serious in-joke */
 
+/* 事件处理初始化宏 */
 #define ev_io_init(ev,cb,fd,events)          do { ev_init ((ev), (cb)); ev_io_set ((ev),(fd),(events)); } while (0)
 #define ev_timer_init(ev,cb,after,repeat)    do { ev_init ((ev), (cb)); ev_timer_set ((ev),(after),(repeat)); } while (0)
 #define ev_periodic_init(ev,cb,ofs,ival,rcb) do { ev_init ((ev), (cb)); ev_periodic_set ((ev),(ofs),(ival),(rcb)); } while (0)
@@ -754,6 +758,7 @@ EV_API_DECL void ev_feed_signal_event (EV_P_ int signum) EV_THROW;
 EV_API_DECL void ev_invoke         (EV_P_ void *w, int revents);
 EV_API_DECL int  ev_clear_pending  (EV_P_ void *w) EV_THROW;
 
+/* 启动IO监控事件 */
 EV_API_DECL void ev_io_start       (EV_P_ ev_io *w) EV_THROW;
 EV_API_DECL void ev_io_stop        (EV_P_ ev_io *w) EV_THROW;
 

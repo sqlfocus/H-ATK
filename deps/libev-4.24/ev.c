@@ -1761,16 +1761,16 @@ ev_realloc (void *ptr, long size)
 /* set in reify when reification needed */
 #define EV_ANFD_REIFY 1
 
-/* file descriptor info structure */
+/* 文件描述符信息结构，用于IO事件 */
 typedef struct
 {
-  WL head;
-  unsigned char events; /* the events watched for */
-  unsigned char reify;  /* flag set when this ANFD needs reification (EV_ANFD_REIFY, EV__IOFDSET) */
-  unsigned char emask;  /* the epoll backend stores the actual kernel mask in here */
+  WL head;              /* 单链表：对应IO事件，ev_io */
+  unsigned char events; /* 监控事件，集合了head链表的所有事件 */
+  unsigned char reify;  /* IO事件改动标识；flag set when this ANFD needs reification (EV_ANFD_REIFY, EV__IOFDSET) */
+  unsigned char emask;  /* 实际EPOLL生效的待监控事件，the epoll backend stores the actual kernel mask in here */
   unsigned char unused;
 #if EV_USE_EPOLL
-  unsigned int egen;    /* generation counter to counter epoll bugs */
+  unsigned int egen;    /* 变更计数器，generation counter to counter epoll bugs */
 #endif
 #if EV_SELECT_IS_WINSOCKET || EV_USE_IOCP
   SOCKET handle;
@@ -1780,7 +1780,8 @@ typedef struct
 #endif
 } ANFD;
 
-/* stores the pending event set for a given watcher */
+/* 存储待处理的事件；
+   stores the pending event set for a given watcher */
 typedef struct
 {
   W w;
@@ -1816,17 +1817,17 @@ typedef struct
 #endif
 
 #if EV_MULTIPLICITY
-
+  /* 事件循环结构体 */
   struct ev_loop
   {
-    ev_tstamp ev_rt_now;
+    ev_tstamp ev_rt_now;      /* 系统当前时间戳 */
     #define ev_rt_now ((loop)->ev_rt_now)
     #define VAR(name,decl) decl;
       #include "ev_vars.h"
     #undef VAR
   };
-  #include "ev_wrap.h"
-
+  /* 默认的事件循环结构体及指针 */
+  #include "ev_wrap.h"                /* 定义了所有变量的访问宏 */
   static struct ev_loop default_loop_struct;
   EV_API_DECL struct ev_loop *ev_default_loop_ptr = 0; /* needs to be initialised to make it a definition despite extern */
 
@@ -1997,6 +1998,7 @@ ev_feed_event (EV_P_ void *w, int revents) EV_THROW
   W w_ = (W)w;
   int pri = ABSPRI (w_);
 
+  /* 添加到事件数组，二维数组，第一维是优先级 */
   if (expect_false (w_->pending))
     pendings [pri][w_->pending - 1].events |= revents;
   else
@@ -2110,23 +2112,27 @@ fd_reify (EV_P)
       unsigned char o_events = anfd->events;
       unsigned char o_reify  = anfd->reify;
 
+      /* 清空标识，以迎接下一次变更 */
       anfd->reify  = 0;
 
       /*if (expect_true (o_reify & EV_ANFD_REIFY)) probably a deoptimisation */
-        {
+      /* 变更待监控事件 */
+      {
           anfd->events = 0;
 
           for (w = (ev_io *)anfd->head; w; w = (ev_io *)((WL)w)->next)
-            anfd->events |= (unsigned char)w->events;
+              anfd->events |= (unsigned char)w->events;
 
           if (o_events != anfd->events)
-            o_reify = EV__IOFDSET; /* actually |= */
-        }
-
+              o_reify = EV__IOFDSET; /* actually |= */
+      }
+        
+      /* 存在监控事件变更，更改底层支持模块儿，如EPOLL */
       if (o_reify & EV__IOFDSET)
         backend_modify (EV_A_ fd, o_events, anfd->events);
     }
 
+  /* 数组索引回滚 */
   fdchangecnt = 0;
 }
 
@@ -2840,7 +2846,8 @@ ev_set_loop_release_cb (EV_P_ void (*release)(EV_P) EV_THROW, void (*acquire)(EV
 }
 #endif
 
-/* initialise a loop structure, must be zero-initialised */
+/* 初始化事件循环结构体，如选择对应的系统支撑epoll等
+   initialise a loop structure, must be zero-initialised */
 noinline ecb_cold
 static void
 loop_init (EV_P_ unsigned int flags) EV_THROW
@@ -2885,7 +2892,7 @@ loop_init (EV_P_ unsigned int flags) EV_THROW
       now_floor          = mn_now;
       rtmn_diff          = ev_rt_now - mn_now;
 #if EV_FEATURE_API
-      invoke_cb          = ev_invoke_pending;
+      invoke_cb          = ev_invoke_pending;   /* 处理悬挂事件的回调 */
 #endif
 
       io_blocktime       = 0.;
@@ -2907,6 +2914,7 @@ loop_init (EV_P_ unsigned int flags) EV_THROW
       sigfd              = flags & EVFLAG_SIGNALFD  ? -2 : -1;
 #endif
 
+      /* 由高优先级到低优先级选择合适的底层事件驱动 */
       if (!(flags & EVBACKEND_MASK))
         flags |= ev_recommended_backends ();
 
@@ -2920,6 +2928,7 @@ loop_init (EV_P_ unsigned int flags) EV_THROW
       if (!backend && (flags & EVBACKEND_KQUEUE)) backend = kqueue_init (EV_A_ flags);
 #endif
 #if EV_USE_EPOLL
+      /* linux默认为EPOLL；初始化； */
       if (!backend && (flags & EVBACKEND_EPOLL )) backend = epoll_init  (EV_A_ flags);
 #endif
 #if EV_USE_POLL
@@ -2929,8 +2938,10 @@ loop_init (EV_P_ unsigned int flags) EV_THROW
       if (!backend && (flags & EVBACKEND_SELECT)) backend = select_init (EV_A_ flags);
 #endif
 
+      /* */
       ev_prepare_init (&pending_w, pendingcb);
 
+      /* */
 #if EV_SIGNAL_ENABLE || EV_ASYNC_ENABLE
       ev_init (&pipe_w, pipecb);
       ev_set_priority (&pipe_w, EV_MAXPRI);
@@ -3236,6 +3247,7 @@ ev_verify (EV_P) EV_THROW
 }
 #endif
 
+/* 此函数的返回值，将赋值给EV_DEFAULT，做为默认的事件循环 */
 #if EV_MULTIPLICITY
 ecb_cold
 struct ev_loop *
@@ -3251,9 +3263,10 @@ ev_default_loop (unsigned int flags) EV_THROW
 #else
       ev_default_loop_ptr = 1;
 #endif
-
+      /* 初始化 */
       loop_init (EV_A_ flags);
 
+      /* 注册SIGCHILD信号 */
       if (ev_backend (EV_A))
         {
 #if EV_CHILD_ENABLE
@@ -3296,6 +3309,7 @@ ev_pending_count (EV_P) EV_THROW
   return count;
 }
 
+/* 处理pendings队列的事件 */
 noinline
 void
 ev_invoke_pending (EV_P)
@@ -3311,6 +3325,7 @@ ev_invoke_pending (EV_P)
           ANPENDING *p = pendings [pendingpri] + --pendingcnt [pendingpri];
 
           p->w->pending = 0;
+          /* 客户端应用程序注册的回调 */
           EV_CB_INVOKE (p->w, p->events);
           EV_FREQUENT_CHECK;
         }
@@ -3560,6 +3575,7 @@ time_update (EV_P_ ev_tstamp max_block)
     }
 }
 
+/* <NOTE!!!>事件循环入口 */
 int
 ev_run (EV_P_ int flags)
 {
@@ -3571,6 +3587,7 @@ ev_run (EV_P_ int flags)
 
   loop_done = EVBREAK_CANCEL;
 
+  /* 处理悬挂事件 */
   EV_INVOKE_PENDING; /* in case we recurse, ensure ordering stays nice and clean */
 
   do
@@ -3607,6 +3624,7 @@ ev_run (EV_P_ int flags)
         }
 #endif
 
+      /* 强制停止当前循环 */
       if (expect_false (loop_done))
         break;
 
@@ -3614,7 +3632,8 @@ ev_run (EV_P_ int flags)
       if (expect_false (postfork))
         loop_fork (EV_A);
 
-      /* update fd-related kernel structures */
+      /* 更新fd相关的待监控事件更改，如ev_io_start()导致的fd增加监控事件
+         update fd-related kernel structures */
       fd_reify (EV_A);
 
       /* calculate blocking time */
@@ -3679,6 +3698,7 @@ ev_run (EV_P_ int flags)
 #if EV_FEATURE_API
         ++loop_count;
 #endif
+        /* 阻塞在EPOLL系统上 */
         assert ((loop_done = EVBREAK_RECURSE, 1)); /* assert for side effect */
         backend_poll (EV_A_ waittime);
         assert ((loop_done = EVBREAK_CANCEL, 1)); /* assert for side effect */
@@ -3714,6 +3734,7 @@ ev_run (EV_P_ int flags)
         queue_events (EV_A_ (W *)checks, checkcnt, EV_CHECK);
 #endif
 
+      /* 处理悬挂事件队列pendings */
       EV_INVOKE_PENDING;
     }
   while (expect_true (
@@ -3729,9 +3750,11 @@ ev_run (EV_P_ int flags)
   --loop_depth;
 #endif
 
+  /* 待监控事件数 */
   return activecnt;
 }
 
+/* 设置跳出循环的方式 */
 void
 ev_break (EV_P_ int how) EV_THROW
 {
@@ -3853,7 +3876,7 @@ ev_stop (EV_P_ W w)
 }
 
 /*****************************************************************************/
-
+/* 启动某个fd的IO监控 */
 noinline
 void
 ev_io_start (EV_P_ ev_io *w) EV_THROW
@@ -3868,6 +3891,7 @@ ev_io_start (EV_P_ ev_io *w) EV_THROW
 
   EV_FREQUENT_CHECK;
 
+  /* 监控事件加入fd信息数组anfds */
   ev_start (EV_A_ (W)w, 1);
   array_needsize (ANFD, anfds, anfdmax, fd + 1, array_init_zero);
   wlist_add (&anfds[fd].head, (WL)w);
@@ -3875,16 +3899,19 @@ ev_io_start (EV_P_ ev_io *w) EV_THROW
   /* common bug, apparently */
   assert (("libev: ev_io_start called with corrupted watcher", ((WL)w)->next != (WL)w));
 
+  /* 加入到IO事件待改动队列fdchanges，等待处理 */
   fd_change (EV_A_ fd, w->events & EV__IOFDSET | EV_ANFD_REIFY);
   w->events &= ~EV__IOFDSET;
 
   EV_FREQUENT_CHECK;
 }
 
+/* 停止fd的监控事件 */
 noinline
 void
 ev_io_stop (EV_P_ ev_io *w) EV_THROW
 {
+  /* 清空pending事件 */
   clear_pending (EV_A_ (W)w);
   if (expect_false (!ev_is_active (w)))
     return;
@@ -3893,9 +3920,11 @@ ev_io_stop (EV_P_ ev_io *w) EV_THROW
 
   EV_FREQUENT_CHECK;
 
+  /* 解除句柄的事件监控 */
   wlist_del (&anfds[w->fd].head, (WL)w);
   ev_stop (EV_A_ (W)w);
 
+  /* 变更IO事件监控 */
   fd_change (EV_A_ w->fd, EV_ANFD_REIFY);
 
   EV_FREQUENT_CHECK;
