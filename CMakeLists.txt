@@ -55,6 +55,28 @@ if(NOT EXISTS ${DEPS_LIB}/${CJSON_LIB_A})
     message(STATUS "done")
 endif()
 
+set(LIBEV_SRC "${CMAKE_SOURCE_DIR}/deps/libev-4.24")
+set(LIBEV_LIB_A "libev.a")
+set(LIBEV_LIB_A_H "ev.h")
+if(NOT EXISTS ${DEPS_LIB}/${LIBEV_LIB_A})
+    message(STATUS "building ${LIBEV_SRC}")
+
+    execute_process(
+        COMMAND ./configure
+        WORKING_DIRECTORY ${LIBEV_SRC})
+    execute_process(
+        COMMAND make
+        WORKING_DIRECTORY ${LIBEV_SRC})
+    execute_process(
+        COMMAND cp .libs/${LIBEV_LIB_A}  ${DEPS_LIB}
+        WORKING_DIRECTORY ${LIBEV_SRC})
+    execute_process(
+        COMMAND cp ${LIBEV_LIB_A_H}  ${DEPS_INCLUDE}
+        WORKING_DIRECTORY ${LIBEV_SRC})
+    
+    message(STATUS "done")
+endif()
+
 
 #指定编译子目录
 add_subdirectory(src)

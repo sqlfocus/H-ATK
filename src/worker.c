@@ -7,26 +7,221 @@
 #include <linux/tcp.h>          /* for TCP_NODELAY */
 #include <time.h>               /* for nanosleep() */
 #include "global.h"
+#include "ev.h"
 #include "worker.h"
 #include "statistics.h"
 
-/* 存储连接结构
-   TODO: 目前不关注发送信息的差异性，并且接收信息也不处理；
-   因此，暂时利用全局结构代替此处的信息结构
-*/
-typedef struct st_conn_info_t {
-#define STAT_INIT  0
-#define STAT_WRITE 1
-#define STAT_READ  2
-    int state;                 /* 连接状态，INIT/WRITE/READ */
-    int fd;                    /* 插口描述符 */
 
-    //char RECV_msg[MSG_MAX_LEN];
-    int rlen;                  /* 读取长度 */
+/* 维护连接的信息结构 */
+typedef struct st_socket_conn_t {
+    struct ev_loop *loop;
+    ev_io read_w;
+    ev_io write_w;
+    
+    int wlen;                    /* 发送长度 */
+    int rlen;                    /* 读取的报文长度 */
+    char buff[MSG_MAX_LEN];      /* 读取的报文缓存 */
+}SOCK_CONN;
 
-    //char GET_msg[MSG_MAX_LEN];
-    int wlen;                  /* 发送长度 */
-}CONN_INFO;
+static struct ev_loop *loop = NULL;            /* libev消息队列 */
+static SOCK_CONN *conn = NULL;                 /* 维护TCP连接的指针数字 */
+static int conn_num = 0;
+static int worker_id;                          /* 进程ID */
+static struct sockaddr_in server_ip;           /* 服务器IP */
+static char GET_msg[MSG_MAX_LEN] = {0};        /* 待发送的信息 */
+static int GET_msg_len = 0;
+static uint32_t sip_min = 0;                   /* 源IP绑定起始地址 */
+static uint32_t sip_max = 0;
+static uint32_t sip = 0;
+
+/* 清理资源 */
+static int clear_res(SOCK_CONN *conn);
+/* 重新建立连接 */
+static int reconn(SOCK_CONN *conn);
+/* 读取响应 */
+static void recv_cb(EV_P_ ev_io *w, int revents);
+/* 发送请求 */
+static void send_cb(EV_P_ ev_io *w, int revents);
+/* 构建TCP连接，初始化libev队列 */
+static int init_conn();
+
+
+
+static int clear_res(SOCK_CONN *conn)
+{
+    /* 清理fd资源 */
+    if (conn->read_w.fd) {
+        close(conn->read_w.fd);
+    }
+    if (conn->write_w.fd) {
+        close(conn->write_w.fd);
+    }
+
+    conn->wlen = 0;
+    conn->rlen = 0;
+    memset(conn->buff, 0, MSG_MAX_LEN);
+
+    ev_io_stop(conn->loop, &conn->read_w);
+    ev_io_stop(conn->loop, &conn->write_w);
+
+    return 0;
+}
+
+static int reconn(SOCK_CONN *conn)
+{
+    struct sockaddr_in client_ip;
+    int fd;
+    
+    fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (-1 == fd) {
+        get_stat_info(worker_id)->other_ERR[errno]++;
+        return -1;
+    }
+        
+    /* 绑定源IP */
+    if (g_opt.bind_sip) {
+        client_ip.sin_family = AF_INET;
+        client_ip.sin_port = 0;
+        client_ip.sin_addr.s_addr = htonl(sip);
+        if (++sip > sip_max) {
+            sip = sip_min;
+        }
+
+        int on=1;
+        if((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0 ) {
+            get_stat_info(worker_id)->other_ERR[errno]++;
+            //return -1;
+        }
+
+        if(-1 == bind(fd, (struct sockaddr *)&client_ip, sizeof(client_ip))) {
+            get_stat_info(worker_id)->other_ERR[errno]++;
+            //return -1;            /* 失败后，由内核选择SIP */
+        }
+    }
+
+    get_stat_info(worker_id)->conn_try++;
+    if (-1 == connect(fd, (const struct sockaddr *)&server_ip,
+                      sizeof(struct sockaddr_in))) {
+        if (errno != EINPROGRESS) {
+            get_stat_info(worker_id)->conn_ERR[errno]++;
+            return -1;
+        }
+    }
+
+    /* 设置非阻塞模式 */
+    int flags = 1;
+    if (-1 == setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags))) {
+        get_stat_info(worker_id)->other_ERR[errno]++;
+        ;/* do nothing */
+    }
+
+    /* 加入事件循环 */
+    ev_io_init(&conn->read_w, recv_cb, fd, EV_READ);
+    ev_io_init(&conn->write_w, send_cb, fd, EV_WRITE);
+    ev_io_start(conn->loop, &conn->write_w);
+    ev_io_start(conn->loop, &conn->read_w);
+
+    return 0;
+}
+
+static void recv_cb(EV_P_ ev_io *w, int revents)
+{
+    SOCK_CONN *tmp_conn = NULL;
+    tmp_conn = (SOCK_CONN *)w->data;
+
+    get_stat_info(worker_id)->read_try++;
+    int len = read(w->fd, tmp_conn->buff, MSG_MAX_LEN);
+    if (len < 0) {                     /* 出错 */
+        get_stat_info(worker_id)->read_ERR[errno]++;
+        if (EAGAIN == errno
+            || EINTR == errno
+            || EWOULDBLOCK == errno) {
+            /* do nothing */
+        } else {
+            clear_res(tmp_conn);
+            reconn(tmp_conn);
+        }
+        return;
+    } else if (0 == len) {             /* 服务器关闭了发送通道(收到了FIN) */
+        clear_res(tmp_conn);
+        reconn(tmp_conn);
+        return;
+    }
+
+    /* 当报文长度=MSG_MAX_LEN时，可以借助以下ioctl(fd, FIONREAD, &num)
+       判断是否需要继续读取报文 */
+    tmp_conn->rlen += len;
+    if (len < MSG_MAX_LEN) {
+        get_stat_info(worker_id)->get_response++;
+                    
+        /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作
+           接收完毕；后续需要调整，通过解包，明确判断结束点 */
+        tmp_conn->rlen = 0;
+        ev_io_start(EV_A_ &tmp_conn->write_w);
+    }
+}
+
+static void send_cb(EV_P_ ev_io *w, int revents)
+{
+    SOCK_CONN *tmp_conn = NULL;
+    tmp_conn = (SOCK_CONN *)w->data;
+    
+    get_stat_info(worker_id)->write_try++;
+    int len = write(w->fd,
+                    GET_msg + tmp_conn->wlen,
+                    GET_msg_len - tmp_conn->wlen);
+    if (len < 0) {
+        get_stat_info(worker_id)->write_ERR[errno]++;
+        if (EAGAIN == errno
+            || EINTR == errno
+            || EWOULDBLOCK == errno) {
+            /* do nothing */
+        } else {
+            clear_res(tmp_conn);
+            reconn(tmp_conn);
+        }
+        return;
+    }
+    
+    tmp_conn->wlen += len;
+    if (tmp_conn->wlen == GET_msg_len) {
+        get_stat_info(worker_id)->get_send++;
+                    
+        tmp_conn->wlen = 0;
+        ev_io_stop(EV_A_ w);
+    }
+}
+
+static int init_conn()
+{
+    SOCK_CONN *tmp_conn = NULL;
+    
+    /* 建立连接的间隔 */
+    struct timespec sleep_interval;  /* 睡眠间隔 */
+    sleep_interval.tv_sec = 0;
+    if (1 == g_opt.is_concurrent) {
+        sleep_interval.tv_nsec = 1000000000/g_opt.client;
+        if (sleep_interval.tv_nsec > 999999999) {
+            sleep_interval.tv_nsec = 999999999;
+        }
+    } else {
+        sleep_interval.tv_nsec = 100;
+    }
+    LOG_INFO("%s [%ld]ns", "sleep interval", sleep_interval.tv_nsec);
+
+    /* 构建客户端连接 */
+    for (int i=0; i<conn_num; i++) {
+        nanosleep(&sleep_interval, NULL);
+
+        tmp_conn = &conn[i];
+        tmp_conn->loop = loop;
+        tmp_conn->read_w.data = tmp_conn;
+        tmp_conn->write_w.data = tmp_conn;
+        reconn(tmp_conn);
+    }
+
+    return 0;
+}
 
 
 /* 工作进程入口
@@ -36,45 +231,39 @@ typedef struct st_conn_info_t {
    @TAKECARE:
    1)此函数不应该返回
 */
-static void worker_process(int id)
+static void worker_process()
 {
-    char RECV_msg[MSG_MAX_LEN] = {0};
-    char GET_msg[MSG_MAX_LEN] = {0};     /* 待发送的GET报文 */
-    int GET_msg_len = 0;
-    struct sockaddr_in server_ip;        /* IP地址 */
-    struct sockaddr_in client_ip;
-
     /* 当对端read插口关闭时，write()会触发SIGPIPE信号； 如果屏蔽掉，
        则会返回错误EPIPE，被错误判断捕捉；如果不屏蔽，则默认导致子
        进程退出 */
     signal(SIGPIPE, SIG_IGN);
     
-    /* 构建服务器端IP */
+    /* 初始化服务器端IP */
     server_ip.sin_family = AF_INET;
     server_ip.sin_port = htons(g_opt.dport);
     if(inet_pton(AF_INET, g_opt.dip, &server_ip.sin_addr) <= 0) {
-        LOG_ERR(strerror(errno));
-        return;
+        LOG_ERR_EXIT(strerror(errno));
     }
 
-    /* 构建发送的字符串 */
+    /* 初始化待发送的GET请求 */
     snprintf(GET_msg, MSG_MAX_LEN, "%s%s%s\r\n\r\n",
-             "GET / HTTP/1.1\r\n",
+             "GET /test/performance HTTP/1.1\r\n",
              "Host: ",
              g_opt.domain);
     GET_msg_len = strlen(GET_msg);
 
-    /* 构建连接信息结构 */
-    int conn_num = (g_opt.client + g_opt.child)/g_opt.child;
-    CONN_INFO *conn = malloc(sizeof(CONN_INFO) * conn_num);
+    /* 构建libev信息结构 */
+    loop = EV_DEFAULT;
+    conn_num = (g_opt.child==1)? (g_opt.client): ((g_opt.client + g_opt.child)/g_opt.child);
+    conn = malloc(sizeof(SOCK_CONN) * conn_num);
     if (NULL == conn) {
         LOG_ERR_EXIT(strerror(errno));
     }
-    memset(conn, 0, sizeof(CONN_INFO) * conn_num);
+    memset(conn, 0, sizeof(SOCK_CONN) * conn_num);
+    LOG_INFO("socket num of worker[%d] is %d", worker_id, conn_num);
 
-    /* 检查源IP绑定 */
-    uint32_t sip_min = 0;
-    uint32_t sip_max = 0;
+    /* 初始化源IP绑定 */
+    struct sockaddr_in client_ip;
     if (g_opt.bind_sip
         && 0 != strcmp(g_opt.sip_min, "")
         && 0 != strcmp(g_opt.sip_max, "")) {
@@ -99,165 +288,19 @@ static void worker_process(int id)
         LOG_INFO("%s", "srcIP bind OFF");
         g_opt.bind_sip = 0;
     }
+    sip = sip_min;
     LOG_INFO("after CHANGE, sip_min=%d.%d.%d.%d, sip_max=%d.%d.%d.%d\n",
              (sip_min>>24)&0xff, (sip_min>>16)&0xff,
              (sip_min>>8)&0xff, (sip_min)&0xff,
              (sip_max>>24)&0xff, (sip_max>>16)&0xff,
              (sip_max>>8)&0xff, (sip_max)&0xff);
     
-    /* 主循环 */
-    int conn_id = 0;                 /* 连接结构索引 */
-    int sip_id = sip_min;            /* 源IP索引 */
-    struct timespec sleep_interval;  /* 睡眠间隔 */
+
+    /* 构建与服务器的TCP连接 */
+    init_conn();
     
-    /* 并发环境下，需要睡眠，以降低发包频率 */
-    sleep_interval.tv_sec = 0;
-    if (1 == g_opt.is_concurrent) {
-        sleep_interval.tv_nsec = 1000000000/g_opt.client;
-        if (sleep_interval.tv_nsec > 999999999) {
-            sleep_interval.tv_nsec = 999999999;
-        }
-    } else {
-        sleep_interval.tv_nsec = 100;
-    }
-    LOG_INFO("%s [%ld]ns", "sleep interval", sleep_interval.tv_nsec);
-
-    
-    for (;;) {
-        nanosleep(&sleep_interval, NULL);
-        
-        /* 索引回滚，重新遍历连接结构 */
-        CONN_INFO *tmp_conn = &conn[conn_id];
-        if (++conn_id >= conn_num) {
-            conn_id = 0;
-        }
-
-        /* 起始状态，创建插口 */
-        if (STAT_INIT == tmp_conn->state) {
-            /* 关闭各种错误导致的无用插口 */
-            if (tmp_conn->fd) {
-                close(tmp_conn->fd);
-                tmp_conn->fd = 0;
-            }
-            
-            int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-            if (-1 == fd) {
-                get_stat_info(id)->other_ERR[errno]++;
-                continue;
-            }
-            tmp_conn->fd = fd;
-        
-            /* 绑定源IP */
-            if (g_opt.bind_sip) {
-                client_ip.sin_family = AF_INET;
-                client_ip.sin_port = 0;
-                client_ip.sin_addr.s_addr = htonl(sip_id);
-                if (++sip_id > sip_max) {
-                    sip_id = sip_min;
-                }
-
-                int on=1;
-                if((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0 ) {
-                    get_stat_info(id)->other_ERR[errno]++;
-                    continue;
-                }
-
-                if(-1 == bind(fd, (struct sockaddr *)&client_ip, sizeof(client_ip))) {
-                    get_stat_info(id)->other_ERR[errno]++;
-                    //continue;            /* 失败后，由内核选择SIP */
-                }
-            }
-
-            get_stat_info(id)->conn_try++;
-            if (-1 == connect(fd, (const struct sockaddr *)&server_ip,
-                              sizeof(struct sockaddr_in))) {
-                if (errno != EINPROGRESS) {
-                    get_stat_info(id)->conn_ERR[errno]++;
-                    continue;
-                }
-            }
-            
-            /* 设置非阻塞模式 */
-            int flags = 1;
-            if (-1 == setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags))) {
-                get_stat_info(id)->other_ERR[errno]++;
-                /* do nothing */;
-            }
-
-            tmp_conn->state = STAT_WRITE;
-        }
-
-        if (STAT_WRITE == tmp_conn->state) {
-            int tmp_loop = 0;
-            do {
-                get_stat_info(id)->write_try++;
-                int len = write(tmp_conn->fd,
-                                GET_msg + tmp_conn->wlen,
-                                GET_msg_len - tmp_conn->wlen);
-                if (-1 == len) {
-                    get_stat_info(id)->write_ERR[errno]++;
-                    
-                    if (EAGAIN == errno
-                        || EINTR == errno
-                        || EWOULDBLOCK == errno) {
-                        continue;
-                    } else {
-                        goto reconn;
-                    }
-                }
-
-                tmp_conn->wlen += len;
-                if (tmp_conn->wlen == GET_msg_len) {
-                    get_stat_info(id)->get_send++;
-                    
-                    tmp_conn->wlen = 0;
-                    tmp_conn->state = STAT_READ;
-                    break;
-                }
-            } while(tmp_loop++ < RW_LOOP_MAX);
-        }
-
-        if (STAT_READ == tmp_conn->state) {
-            int tmp_loop = 0;
-            do {
-                get_stat_info(id)->read_try++;
-                int len = read(tmp_conn->fd, RECV_msg, MSG_MAX_LEN);
-                if (-1 == len) {
-                    get_stat_info(id)->read_ERR[errno]++;
-                    
-                    if (EAGAIN == errno
-                        || EINTR == errno
-                        || EWOULDBLOCK == errno) {
-                        continue;
-                    } else {
-                        goto reconn;
-                    }
-                }
-
-                /* 未考虑=0的情况, 当报文长度=MSG_MAX_LEN时，可以借助以下
-                   ioctl(fd, FIONREAD, &num) 判断是否需要继续读取报文 */
-                if (0< len && len < MSG_MAX_LEN) {
-                    get_stat_info(id)->get_response++;
-                    
-                    /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作
-                       接收完毕；后续需要调整，通过解包，明确判断结束点 */
-                    if (g_opt.keepalive) {
-                        tmp_conn->state = STAT_WRITE;
-                    } else {
-                    reconn:
-                        get_stat_info(id)->conn_reconn++;
-                        
-                        close(tmp_conn->fd);
-                        tmp_conn->fd = 0;
-                        tmp_conn->state = STAT_INIT;
-                    }
-                    tmp_conn->rlen = 0;
-
-                    break;
-                }
-            } while(tmp_loop++ < RW_LOOP_MAX);
-        }
-    }
+    /* 开启主循环 */
+    ev_run(loop, 0);
 
     /* 清理资源 */
     free(conn);
@@ -268,14 +311,14 @@ static void worker_process(int id)
 void spawn_child_process(int worker_num, int cpu_num)
 {
     pid_t pid;
-    int i;
-    for (i=0; i<worker_num; i++){
+    for (int i=0; i<worker_num; i++){
         pid = fork();
         switch (pid) {
         case -1:
             LOG_ERR(strerror(errno));
             break;
         case 0:            /* 子进程 */
+            worker_id = i + 1;
             break;
         default:           /* 父进程 */
             break;
@@ -302,7 +345,7 @@ void spawn_child_process(int worker_num, int cpu_num)
     LOG_INFO("child[%d] bind to CPU[%d]", pid, pid % cpu_num);
 
     /* 工作线程主处理入口; 索引ID 0预留给主进程 */
-    worker_process(i+1);
+    worker_process();
     LOG_ERR_EXIT("SHOULD NOT HERE!!!");
 }
 

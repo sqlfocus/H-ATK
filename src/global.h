@@ -10,7 +10,6 @@
 #include "option.h"
 
 #define MSG_MAX_LEN  8192         /* 收发报文缓存的最大长度 */
-#define RW_LOOP_MAX  3            /* 非阻塞模式下，最大的读写重试次数 */
 #define ERR_NUM_MAX  150          /* 大略约定errno的取值范围，方便统计错误 */
 
 #define LOG_INFO(fmt, ...) do {                                         \
