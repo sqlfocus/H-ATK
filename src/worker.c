@@ -15,8 +15,8 @@
 /* 维护连接的信息结构 */
 typedef struct st_socket_conn_t {
     struct ev_loop *loop;
-    ev_io read_w;
-    ev_io write_w;
+    ev_io read;
+    ev_io write;
     
     int wlen;                    /* 发送长度 */
     int rlen;                    /* 读取的报文长度 */
@@ -25,7 +25,9 @@ typedef struct st_socket_conn_t {
 
 static struct ev_loop *loop = NULL;            /* libev消息队列 */
 static SOCK_CONN *conn = NULL;                 /* 维护TCP连接的指针数字 */
+ev_timer conn_setup_time_watcher;              /* 用于构建TCP连接 */
 static int conn_num = 0;
+static int conn_id = 0;
 static int worker_id;                          /* 进程ID */
 static struct sockaddr_in server_ip;           /* 服务器IP */
 static char GET_msg[MSG_MAX_LEN] = {0};        /* 待发送的信息 */
@@ -46,23 +48,22 @@ static void send_cb(EV_P_ ev_io *w, int revents);
 static int init_conn();
 
 
-
 static int clear_res(SOCK_CONN *conn)
 {
     /* 清理fd资源 */
-    if (conn->read_w.fd) {
-        close(conn->read_w.fd);
+    if (conn->read.fd) {
+        close(conn->read.fd);
     }
-    if (conn->write_w.fd) {
-        close(conn->write_w.fd);
+    if (conn->write.fd) {
+        close(conn->write.fd);
     }
 
     conn->wlen = 0;
     conn->rlen = 0;
     memset(conn->buff, 0, MSG_MAX_LEN);
 
-    ev_io_stop(conn->loop, &conn->read_w);
-    ev_io_stop(conn->loop, &conn->write_w);
+    ev_io_stop(conn->loop, &conn->read);
+    ev_io_stop(conn->loop, &conn->write);
 
     return 0;
 }
@@ -116,10 +117,10 @@ static int reconn(SOCK_CONN *conn)
     }
 
     /* 加入事件循环 */
-    ev_io_init(&conn->read_w, recv_cb, fd, EV_READ);
-    ev_io_init(&conn->write_w, send_cb, fd, EV_WRITE);
-    ev_io_start(conn->loop, &conn->write_w);
-    ev_io_start(conn->loop, &conn->read_w);
+    ev_io_init(&conn->read, recv_cb, fd, EV_READ);
+    ev_io_init(&conn->write, send_cb, fd, EV_WRITE);
+    ev_io_start(conn->loop, &conn->write);
+    ev_io_start(conn->loop, &conn->read);
 
     return 0;
 }
@@ -158,7 +159,7 @@ static void recv_cb(EV_P_ ev_io *w, int revents)
            接收完毕；后续需要调整，通过解包，明确判断结束点 */
         tmp_conn->rlen = 0;
         if (g_opt.keepalive) {
-            ev_io_start(EV_A_ &tmp_conn->write_w);
+            ev_io_start(EV_A_ &tmp_conn->write);
         } else {
             clear_res(tmp_conn);
             reconn(tmp_conn);
@@ -198,33 +199,28 @@ static void send_cb(EV_P_ ev_io *w, int revents)
     }
 }
 
-static int init_conn()
+static void timeout_cb(EV_P_ ev_timer *w, int revents)
 {
     SOCK_CONN *tmp_conn = NULL;
+
+    tmp_conn = &conn[conn_id];
+    tmp_conn->loop = loop;
+    tmp_conn->read.data = tmp_conn;
+    tmp_conn->write.data = tmp_conn;
+    reconn(tmp_conn);
     
-    /* 建立连接的间隔 */
-    struct timespec sleep_interval;  /* 睡眠间隔 */
-    sleep_interval.tv_sec = 0;
-    if (1 == g_opt.is_concurrent) {
-        sleep_interval.tv_nsec = 1000000000/g_opt.client;
-        if (sleep_interval.tv_nsec > 999999999) {
-            sleep_interval.tv_nsec = 999999999;
-        }
-    } else {
-        sleep_interval.tv_nsec = 100;
+    /* 关闭定时器 */
+    conn_id++;
+    if (conn_id >= conn_num) {
+        ev_timer_stop(EV_A_ &conn_setup_time_watcher);
     }
-    LOG_INFO("%s [%ld]ns", "sleep interval", sleep_interval.tv_nsec);
+}
 
-    /* 构建客户端连接 */
-    for (int i=0; i<conn_num; i++) {
-        nanosleep(&sleep_interval, NULL);
-
-        tmp_conn = &conn[i];
-        tmp_conn->loop = loop;
-        tmp_conn->read_w.data = tmp_conn;
-        tmp_conn->write_w.data = tmp_conn;
-        reconn(tmp_conn);
-    }
+static int init_conn()
+{
+    /* 0.0001s后启动定时器 */
+    ev_timer_init(&conn_setup_time_watcher, timeout_cb, 0, 0.0001);
+    ev_timer_again(loop, &conn_setup_time_watcher);
 
     return 0;
 }

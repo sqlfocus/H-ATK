@@ -12,14 +12,14 @@
 
 int main(int argc, char **argv)
 {
-    /* 解析参数 */
-    if (-1 == parse_option(argc, argv)) {
-        LOG_ERR_EXIT("parse option failed");
-    }
-
     /* 获取系统信息 */
     if (-1 == get_sysinfo()) {
         LOG_ERR_EXIT("get sysinfo failed");
+    }
+
+    /* 解析参数 */
+    if (-1 == parse_option(argc, argv)) {
+        LOG_ERR_EXIT("parse option failed");
     }
 
     /* 创建共享内存以存储统计信息 */

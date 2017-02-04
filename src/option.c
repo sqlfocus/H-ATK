@@ -11,7 +11,6 @@ OPTION_T g_opt = {
     .client = 1,
     .child = 1,
     .keepalive = 0,
-    .is_concurrent = 0,
     .bind_sip = 0,
     .duration = 30,
     .stat_dur = 3,
@@ -66,7 +65,6 @@ static int parse_conf(const char *conf)
     SET_VAL_INT("client", client);
     SET_VAL_INT("child", child);
     SET_VAL_INT("keepalive", keepalive);
-    SET_VAL_INT("is_concurrent", is_concurrent);
     SET_VAL_INT("bind_sip", bind_sip);
     SET_VAL_INT("duration", duration);
     SET_VAL_INT("stat_dur", stat_dur);
@@ -112,13 +110,9 @@ int parse_option(int argc, char** argv)
     close(fd);
 
     /* 验证参数合理性 */
-    if (g_opt.client > 10000000) {           /* 1kw, 保持死循环最小100ns的间隔 */
+    if (g_opt.client > 10000000                 /* 最大千万级别 */
+        || g_opt.client > g_sysinfo.fd_max) {
         LOG_ERR("too many clients!!!");
-        return -1;
-    }
-    if (1 == g_opt.is_concurrent
-        && 0 == g_opt.keepalive) {
-        LOG_ERR("cocurrent MUST be in KEEPALVE!!!");
         return -1;
     }
     if ( (0==strcmp(g_opt.sip_min, "") && 1==g_opt.bind_sip)
@@ -130,25 +124,25 @@ int parse_option(int argc, char** argv)
     /* 打印系统信息 */
     printf("client=%d, "
            "child=%d, \n"
-           "keepalive=%d, "
-           "bind_sip=%d, \n"
+           "keepalive=%d, \n"
            "duration=%d, "
            "stat_dur=%d, \n"
            "dport=%d, "
            "dip=%s, "
-           "domain=%s, "
+           "domain=%s, \n"
+           "bind_sip=%d, "
            "sip_min=%s, "
            "sip_max=%s, "
            "\n\n",
            g_opt.client,
            g_opt.child,
            g_opt.keepalive,
-           g_opt.bind_sip,
            g_opt.duration,
            g_opt.stat_dur,
            g_opt.dport,
            g_opt.dip,
            g_opt.domain,
+           g_opt.bind_sip,
            g_opt.sip_min,
            g_opt.sip_max);
     return 0;
