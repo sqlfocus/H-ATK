@@ -157,7 +157,13 @@ static void recv_cb(EV_P_ ev_io *w, int revents)
         /* FIXME: 目前回应的内容比较少，因此只要收到报文就可用当作
            接收完毕；后续需要调整，通过解包，明确判断结束点 */
         tmp_conn->rlen = 0;
-        ev_io_start(EV_A_ &tmp_conn->write_w);
+        if (g_opt.keepalive) {
+            ev_io_start(EV_A_ &tmp_conn->write_w);
+        } else {
+            clear_res(tmp_conn);
+            reconn(tmp_conn);
+            return;
+        }
     }
 }
 
