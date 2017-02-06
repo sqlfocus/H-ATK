@@ -292,7 +292,7 @@ enum {
 
 #define EV_WATCHER_TIME(type)			\
   EV_WATCHER (type)				\
-  ev_tstamp at;     /* private */
+  ev_tstamp at;     /* 定时器执行时刻的时间戳，private */
 
 /* base class, nothing to see here unless you subclass */
 typedef struct ev_watcher
@@ -329,7 +329,7 @@ typedef struct ev_timer
 {
   EV_WATCHER_TIME (ev_timer)
 
-  ev_tstamp repeat; /* rw */
+  ev_tstamp repeat; /* 定时器重复执行的间隔，rw */
 } ev_timer;
 
 /* invoked at some specific time, possibly repeating at regular intervals (based on UTC) */
@@ -762,6 +762,7 @@ EV_API_DECL int  ev_clear_pending  (EV_P_ void *w) EV_THROW;
 EV_API_DECL void ev_io_start       (EV_P_ ev_io *w) EV_THROW;
 EV_API_DECL void ev_io_stop        (EV_P_ ev_io *w) EV_THROW;
 
+/* 启停定时器 */
 EV_API_DECL void ev_timer_start    (EV_P_ ev_timer *w) EV_THROW;
 EV_API_DECL void ev_timer_stop     (EV_P_ ev_timer *w) EV_THROW;
 /* stops if active and no repeat, restarts if active and repeating, starts if inactive and repeating */

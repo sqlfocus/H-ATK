@@ -1679,6 +1679,7 @@ ev_printerr (const char *msg)
 
 static void (*syserr_cb)(const char *msg) EV_THROW;
 
+/* 捕捉系统错误后，调用此函数设定的句柄处理 */
 ecb_cold
 void
 ev_set_syserr_cb (void (*cb)(const char *msg) EV_THROW) EV_THROW
@@ -1686,6 +1687,7 @@ ev_set_syserr_cb (void (*cb)(const char *msg) EV_THROW) EV_THROW
   syserr_cb = cb;
 }
 
+/* 系统错误后的处理入口，如epoll_create()/epoll_wait()返回出错 */
 noinline ecb_cold
 static void
 ev_syserr (const char *msg)
@@ -1796,12 +1798,12 @@ typedef struct
 } ANFS;
 #endif
 
-/* Heap Entry */
+/* 最小堆，实现定时器等排序相关的结构；Heap Entry */
 #if EV_HEAP_CACHE_AT
   /* a heap element */
   typedef struct {
-    ev_tstamp at;
-    WT w;
+    ev_tstamp at;     /* 缓存定时器启动时间戳，提高效率 */
+    WT w;             /* 定时器 */
   } ANHE;
 
   #define ANHE_w(he)        (he).w     /* access watcher, read-write */
@@ -2204,7 +2206,8 @@ fd_enomem (EV_P)
       }
 }
 
-/* usually called after fork if backend needs to re-arm all fds from scratch */
+/* fork后调用，清理所有的fd监控事件
+   usually called after fork if backend needs to re-arm all fds from scratch */
 noinline
 static void
 fd_rearm_all (EV_P)
@@ -2808,12 +2811,14 @@ ev_depth (EV_P) EV_THROW
   return loop_depth;
 }
 
+/* 设置IO事件最短等待事件 */
 void
 ev_set_io_collect_interval (EV_P_ ev_tstamp interval) EV_THROW
 {
   io_blocktime = interval;
 }
 
+/* 设置最短阻塞时间 */
 void
 ev_set_timeout_collect_interval (EV_P_ ev_tstamp interval) EV_THROW
 {
@@ -2878,6 +2883,7 @@ loop_init (EV_P_ unsigned int flags) EV_THROW
 
       /* pid check not overridable via env */
 #ifndef _WIN32
+      /* 记录当前进程PID */
       if (flags & EVFLAG_FORKCHECK)
         curpid = getpid ();
 #endif
@@ -3065,6 +3071,7 @@ ev_loop_destroy (EV_P)
 inline_size void infy_fork (EV_P);
 #endif
 
+/* 清理循环内，清理底层事件模块儿的监控事件 */
 inline_size void
 loop_fork (EV_P)
 {
@@ -3357,12 +3364,13 @@ idle_reify (EV_P)
 }
 #endif
 
-/* make timers pending */
+/* 定时器处理入口，make timers pending */
 inline_size void
 timers_reify (EV_P)
 {
   EV_FREQUENT_CHECK;
 
+  /* 加速判断而已 */
   if (timercnt && ANHE_at (timers [HEAP0]) < mn_now)
     {
       do
@@ -3593,10 +3601,12 @@ ev_run (EV_P_ int flags)
   do
     {
 #if EV_VERIFY >= 2
+      /* 调试功能，检查各个队列、数组是否正常 */
       ev_verify (EV_A);
 #endif
 
 #ifndef _WIN32
+      /* 循环内的fork动作检测 */
       if (expect_false (curpid)) /* penalise the forking check even more */
         if (expect_false (getpid () != curpid))
           {
@@ -3606,7 +3616,8 @@ ev_run (EV_P_ int flags)
 #endif
 
 #if EV_FORK_ENABLE
-      /* we might have forked, so queue fork handlers */
+      /* 如果注册了fork事件，则调用其回调处理；通过ev_fork_init()注册
+         we might have forked, so queue fork handlers */
       if (expect_false (postfork))
         if (forkcnt)
           {
@@ -3616,7 +3627,8 @@ ev_run (EV_P_ int flags)
 #endif
 
 #if EV_PREPARE_ENABLE
-      /* queue prepare watchers (and execute them) */
+      /* 如果注册了prepare事件，则调用其回调处理；通过ev_prepare_init()注册
+         queue prepare watchers (and execute them) */
       if (expect_false (preparecnt))
         {
           queue_events (EV_A_ (W *)prepares, preparecnt, EV_PREPARE);
@@ -3628,7 +3640,8 @@ ev_run (EV_P_ int flags)
       if (expect_false (loop_done))
         break;
 
-      /* we might have forked, so reify kernel state if necessary */
+      /* 清理EPOLL系统的监控事件；
+         we might have forked, so reify kernel state if necessary */
       if (expect_false (postfork))
         loop_fork (EV_A);
 
@@ -3636,7 +3649,7 @@ ev_run (EV_P_ int flags)
          update fd-related kernel structures */
       fd_reify (EV_A);
 
-      /* calculate blocking time */
+      /* 计算阻塞时长；calculate blocking time */
       {
         ev_tstamp waittime  = 0.;
         ev_tstamp sleeptime = 0.;
@@ -3717,7 +3730,8 @@ ev_run (EV_P_ int flags)
         time_update (EV_A_ waittime + sleeptime);
       }
 
-      /* queue pending timers and reschedule them */
+      /* 定时器处理；
+         queue pending timers and reschedule them */
       timers_reify (EV_A); /* relative timers called last */
 #if EV_PERIODIC_ENABLE
       periodics_reify (EV_A); /* absolute timers called first */
@@ -3743,6 +3757,9 @@ ev_run (EV_P_ int flags)
     && !(flags & (EVRUN_ONCE | EVRUN_NOWAIT))
   ));
 
+  /* EVBREAK_ONE：只跳出当前事件循环
+     EVBREAK_ALL：跳出所有的事件循环
+     如果只跳出当前事件循环，跳出后设置全局变量，防止继续跳出父事件循环 */
   if (loop_done == EVBREAK_ONE)
     loop_done = EVBREAK_CANCEL;
 
@@ -3754,7 +3771,7 @@ ev_run (EV_P_ int flags)
   return activecnt;
 }
 
-/* 设置跳出循环的方式 */
+/* 设置跳出循环的方式；EVBREAK_ALL/EVBREAK_ONE */
 void
 ev_break (EV_P_ int how) EV_THROW
 {
@@ -3779,6 +3796,8 @@ ev_now_update (EV_P) EV_THROW
   time_update (EV_A_ 1e100);
 }
 
+/* 如果消息循环需要挂起一段时间，调用此函数；
+   消息循环恢复的时候，需要调用ev_resume */
 void
 ev_suspend (EV_P) EV_THROW
 {
@@ -3827,6 +3846,7 @@ wlist_del (WL *head, WL elem)
 inline_speed void
 clear_pending (EV_P_ W w)
 {
+  /* 利用dummy事件结构占位；因为调整数组的代价太大 */
   if (w->pending)
     {
       pendings [ABSPRI (w)][w->pending - 1].w = (W)&pending_w;
@@ -3943,6 +3963,7 @@ ev_timer_start (EV_P_ ev_timer *w) EV_THROW
 
   EV_FREQUENT_CHECK;
 
+  /* 调整定时器最小堆 */
   ++timercnt;
   ev_start (EV_A_ (W)w, timercnt + HEAP0 - 1);
   array_needsize (ANHE, timers, timermax, ev_active (w) + 1, EMPTY2);

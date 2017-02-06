@@ -26,6 +26,7 @@
 #define cleanupcnt ((loop)->cleanupcnt)
 #define cleanupmax ((loop)->cleanupmax)
 #define cleanups ((loop)->cleanups)
+/* 当前进程的PID */
 #define curpid ((loop)->curpid)
 /* 不适于EPOLL系统处理的fd数组 */    
 #define epoll_epermcnt ((loop)->epoll_epermcnt)
@@ -39,6 +40,7 @@
 #define fdchangecnt ((loop)->fdchangecnt)
 #define fdchangemax ((loop)->fdchangemax)
 #define fdchanges ((loop)->fdchanges)
+/* fork操作数组 */    
 #define forkcnt ((loop)->forkcnt)
 #define forkmax ((loop)->forkmax)
 #define forks ((loop)->forks)
@@ -69,7 +71,7 @@
 /* mn_now的取整时间 */
 #define now_floor ((loop)->now_floor)
 #define origflags ((loop)->origflags)
-/* */
+/* dummy事件；删除悬挂事件列表时，被当作哨兵，以防止更改数组带来的高代价 */
 #define pending_w ((loop)->pending_w)
 /* 等待客户端处理到事件数组，二维，第一维代表优先级 */
 #define pendingcnt ((loop)->pendingcnt)
@@ -89,6 +91,7 @@
 #define polls ((loop)->polls)
 #define port_eventmax ((loop)->port_eventmax)
 #define port_events ((loop)->port_events)
+/* 是否经历过fork() */
 #define postfork ((loop)->postfork)
 #define preparecnt ((loop)->preparecnt)
 #define preparemax ((loop)->preparemax)
@@ -104,6 +107,7 @@
 #define sigfd_set ((loop)->sigfd_set)
 #define sigfd_w ((loop)->sigfd_w)
 #define timeout_blocktime ((loop)->timeout_blocktime)
+/* 定时器堆 */
 #define timercnt ((loop)->timercnt)
 #define timermax ((loop)->timermax)
 #define timers ((loop)->timers)

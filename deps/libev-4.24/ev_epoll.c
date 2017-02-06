@@ -269,7 +269,7 @@ epoll_init (EV_P_ int flags)
   fcntl (backend_fd, F_SETFD, FD_CLOEXEC);
 
   /* 设定操控句柄 */
-  backend_mintime = 1e-3; /* epoll does sometimes return early, this is just to avoid the worst */
+  backend_mintime = 1e-3; /* 最短等待时长；0.001s；epoll does sometimes return early, this is just to avoid the worst */
   backend_modify  = epoll_modify;
   backend_poll    = epoll_poll;
 
@@ -288,6 +288,7 @@ epoll_destroy (EV_P)
   array_free (epoll_eperm, EMPTY);
 }
 
+/* 处理fork的情形 */
 inline_size
 void
 epoll_fork (EV_P)
@@ -299,6 +300,7 @@ epoll_fork (EV_P)
 
   fcntl (backend_fd, F_SETFD, FD_CLOEXEC);
 
+  /* 清理fd监控事件 */
   fd_rearm_all (EV_A);
 }
 
